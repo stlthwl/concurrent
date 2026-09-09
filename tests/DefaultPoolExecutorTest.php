@@ -71,4 +71,60 @@ class DefaultPoolExecutorTest extends TestCase
         $pool->shutdown();
         $this->assertTrue($pool->isShutdown());
     }
+
+    public function testAbruptWorkerFailureStopsPoolWithoutReplacement(): void
+    {
+        $queueCount = $this->getSystemQueueCount();
+        $pool = new DefaultPoolExecutor(1, 1);
+        $pool->execute(new FailingTask());
+
+        $deadline = microtime(true) + 2;
+        while (!$pool->isFailed() && microtime(true) < $deadline) {
+            usleep(10000);
+        }
+
+        $this->assertTrue($pool->isFailed());
+        $this->assertSame(1, $pool->getFailedWorkerCount());
+        $this->assertSame(0, $pool->getPoolSize());
+        $this->assertSame($queueCount, $this->getSystemQueueCount());
+        $this->assertThrowsRuntimeException(function () use ($pool): void {
+            $pool->execute(new TestTask('must be rejected'));
+        });
+    }
+
+    public function testPhpErrorAlsoStopsPoolWithoutReplacement(): void
+    {
+        $queueCount = $this->getSystemQueueCount();
+        $pool = new DefaultPoolExecutor(1, 1);
+        $pool->execute(new FailingTask(true));
+
+        $deadline = microtime(true) + 2;
+        while (!$pool->isFailed() && microtime(true) < $deadline) {
+            usleep(10000);
+        }
+
+        $this->assertTrue($pool->isFailed());
+        $this->assertSame(1, $pool->getFailedWorkerCount());
+        $this->assertSame(0, $pool->getPoolSize());
+        $this->assertSame($queueCount, $this->getSystemQueueCount());
+    }
+
+    private function assertThrowsRuntimeException(callable $callback): void
+    {
+        try {
+            $callback();
+            $this->fail('Expected RuntimeException was not thrown');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Cannot execute tasks: worker pool has failed', $exception->getMessage());
+        }
+    }
+
+    private function getSystemQueueCount(): int
+    {
+        if (!is_readable('/proc/sysvipc/msg')) {
+            $this->markTestSkipped('SysV IPC queue information is not available');
+        }
+
+        return count(file('/proc/sysvipc/msg'));
+    }
 }

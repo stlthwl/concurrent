@@ -32,7 +32,9 @@ class ProcessWorker extends AbstractQueuedSynchronizer implements RunnableInterf
         $this->thread = new InterruptibleProcess(function ($process) use ($scope, $args) {
             $scope->run($process, ...$args);
         }, false);
-        $this->thread->useQueue(1, 2);
+        // IPC_PRIVATE gives every worker its own queue. A shared key makes a
+        // failed worker capable of filling or removing the queue of the pool.
+        $this->thread->useQueue(0, 2);
     }
 
     public function start(): void
@@ -43,7 +45,16 @@ class ProcessWorker extends AbstractQueuedSynchronizer implements RunnableInterf
     /** Delegates main run loop to outer runWorker  */
     public function run(ThreadInterface $process = null, ...$args): void
     {
-        $this->executor->runWorker($this, ...$args);
+        try {
+            $this->executor->runWorker($this, ...$args);
+        } catch (\Throwable $throwable) {
+            if (method_exists($this->executor, 'failPool')) {
+                $this->executor->failPool();
+            }
+            throw $throwable;
+        } finally {
+            $this->thread->cleanup();
+        }
     }
 
     // Lock methods
