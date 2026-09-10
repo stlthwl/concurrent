@@ -1,10 +1,10 @@
 build:
   nodes:
-    php74:
+    php82:
       environment:
-        php: 7.4
+        php: 8.2
         redis: false
       dependencies:
         before:
           - command: 'pecl channel-update pecl.php.net'
-          - command: 'pecl install openswoole-4.11.1'
+          - command: 'pecl install openswoole-25.2.0'
