@@ -6,4 +6,5 @@ build:
         redis: false
       dependencies:
         before:
-          - command: 'pecl install openswoole'
+          - command: 'pecl channel-update pecl.php.net'
+          - command: 'pecl install openswoole-4.11.1'
