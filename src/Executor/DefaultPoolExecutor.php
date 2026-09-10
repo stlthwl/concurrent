@@ -745,6 +745,7 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
 
         self::$taskCounter = new \Swoole\Atomic\Long(0);  
         $this->failedWorkerCount = new \Swoole\Atomic\Long(0);
+        \Concurrent\Lock\LockSupport::init();
     }
 
     /**
@@ -833,7 +834,6 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
     public function failPool(): void
     {
         $this->markWorkerFailure();
-        $this->interruptWorkers();
         $this->tryTerminate();
     }
 

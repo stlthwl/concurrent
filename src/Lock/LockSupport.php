@@ -140,6 +140,9 @@ class LockSupport
         }
         //$client = new Socket("localhost", self::$port->get());
         $client = @stream_socket_client("tcp://localhost:" . self::$port->get());
+        if (!is_resource($client)) {
+            return;
+        }
         /*if (hrtime(true) - $callTime > 1_000_000_000) {
             fwrite(STDERR, getmypid() . ": [WARNING] client socket initializations takes too long: " . floor((hrtime(true) - $callTime) / 1_000_000_000) . " seconds\n");
         }*/
@@ -179,6 +182,11 @@ class LockSupport
         if (!$permitAvailable && (($state = self::$state->get((string) $pid)) === false || $state['type'] === 0)) {    
             self::$state->set((string) $pid, ['type' => 2]);
             $client = @stream_socket_client("tcp://localhost:" . self::$port->get());        
+            if (!is_resource($client)) {
+                self::$permits->del((string) $pid);
+                self::$state->del((string) $pid);
+                return;
+            }
             //$client = new Socket('localhost', self::$port->get());
             if (hrtime(true) - $callTime > 1_000_000_000) {
                 fwrite(STDERR, getmypid() . ": [WARNING] client socket initializations takes too long: " . floor((hrtime(true) - $callTime) / 1_000_000_000) . " seconds\n");

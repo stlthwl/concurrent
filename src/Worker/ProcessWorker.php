@@ -42,6 +42,11 @@ class ProcessWorker extends AbstractQueuedSynchronizer implements RunnableInterf
         $this->thread->start();
     }
 
+    public function interrupt(): void
+    {
+        $this->thread->interrupt();
+    }
+
     /** Delegates main run loop to outer runWorker  */
     public function run(ThreadInterface $process = null, ...$args): void
     {

@@ -14,7 +14,7 @@ class Itr extends \ArrayIterator
     public function __construct(BlockingQueueInterface $queue)
     {
         parent::__construct([]);
-        $queue->lock->trylock();
+        $queue->lock->lock();
         try {
             $this->collection = $queue;
             $this->lastRet = -1;
@@ -35,7 +35,7 @@ class Itr extends \ArrayIterator
 
     public function current(): mixed
     {
-        $this->collection->lock->trylock();
+        $this->collection->lock->lock();
         try {
             return $this->collection->itemAt($this->nextIndex);
         } finally {
@@ -48,7 +48,7 @@ class Itr extends \ArrayIterator
         if ($this->remaining <= 0) {
             throw new \Exception("no such element");
         }
-        $this->collection->lock->trylock();
+        $this->collection->lock->lock();
         try {
             $this->lastRet = $this->nextIndex;
             while (
