@@ -6,5 +6,5 @@ build:
         redis: false
       dependencies:
         before:
-          - command: 'pecl channel-update pecl.php.net'
-          - command: 'pecl install openswoole-25.2.0'
+          - command: 'pecl channel-update pecl.php.net && yes "" | pecl install openswoole-25.2.0'
+            idle_timeout: 900
