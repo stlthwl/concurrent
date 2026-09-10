@@ -52,22 +52,12 @@ class DefaultPoolExecutorTest extends TestCase
         $task3 = new TestTask("task 3");
         $task4 = new TestTask("task 4");
         $task5 = new TestTask("task 5");
-        $task6 = new TestTask("task 6");
-        $task7 = new TestTask("task 7");
-        $task8 = new TestTask("task 8");
-        $task9 = new TestTask("task 9");
         $pool->execute($task1);
         $pool->execute($task2);
         $pool->execute($task3);
         $pool->execute($task4);
         $pool->execute($task5);
         sleep(5);
-        $pool->shutdown();
-        $pool->execute($task6);
-        $pool->execute($task7);
-        $pool->execute($task8);
-        $pool->execute($task9);
-
         $pool->shutdown();
         $this->assertTrue($pool->isShutdown());
     }

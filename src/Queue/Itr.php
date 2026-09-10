@@ -13,6 +13,7 @@ class Itr extends \ArrayIterator
 
     public function __construct(BlockingQueueInterface $queue)
     {
+        parent::__construct([]);
         $queue->lock->trylock();
         try {
             $this->collection = $queue;
@@ -32,7 +33,7 @@ class Itr extends \ArrayIterator
         return $this->remaining > 0;
     }
 
-    public function current()
+    public function current(): mixed
     {
         $this->collection->lock->trylock();
         try {
