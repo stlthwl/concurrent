@@ -8,6 +8,7 @@ class DelayedItr extends \ArrayIterator
 
     public function __construct(BlockingQueueInterface $queue)
     {
+        parent::__construct([]);
         $this->queue = $queue;
     }
 
@@ -16,7 +17,7 @@ class DelayedItr extends \ArrayIterator
         return DelayedWorkQueue::$queue->valid();
     }
 
-    public function current()
+    public function current(): mixed
     {
         return DelayedWorkQueue::$queue->current();
     }

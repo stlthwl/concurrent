@@ -42,6 +42,15 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
 
     protected static $initialized = false;
     protected $ctl;
+    /**
+     * Set when a worker terminates because of an uncaught Throwable.
+     *
+     * Worker cleanup runs in the child process. Starting a replacement from
+     * that cleanup path can recursively create child processes when the same
+     * task fails again, so abrupt failures put the pool into a fail-closed
+     * state instead of attempting recovery from inside the failed worker.
+     */
+    private $failedWorkerCount;
     //protected $queueSize;
     protected $xid;
 
@@ -108,6 +117,19 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
     private function decrementWorkerCount(): void
     {
         $this->ctl->sub(1);
+    }
+
+    private function markWorkerFailure(): void
+    {
+        $this->failedWorkerCount->cmpset(0, 1);
+
+        for (;;) {
+            $c = $this->ctl->get();
+            if (self::runStateAtLeast($c, self::STOP)
+                || $this->ctl->cmpset($c, self::ctlOf(self::STOP, self::workerCountOf($c)))) {
+                return;
+            }
+        }
     }
 
     /**
@@ -235,7 +257,7 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
 
             $this->mainLock->lock();
             try {
-                if ($this->ctl->compareAndSet($c, self::ctlOf(self::TIDYING, 0))) {
+                if ($this->ctl->cmpset($c, self::ctlOf(self::TIDYING, 0))) {
                     try {
                         $this->terminated();
                     } finally {
@@ -424,7 +446,8 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
         }
 
         $workerStarted = false;
-        $workerAdded = false;        
+        $workerAdded = false;
+        $w = null;
         try {
             $w = WorkerFactory::create($this->workerType, $firstTask, $this);
             $t = $w->thread;            
@@ -502,6 +525,7 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
     {
         if ($completedAbruptly) {// If abrupt, then workerCount wasn't adjusted
             $this->decrementWorkerCount();
+            $this->markWorkerFailure();
         }
 
         $this->mainLock->lock();
@@ -519,6 +543,12 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
         $this->tryTerminate();
 
         $c = $this->ctl->get();
+        if ($completedAbruptly) {
+            // Do not start a replacement from the failed child. The parent
+            // must observe the failed state and restart or repair the pool.
+            return;
+        }
+
         if (self::runStateLessThan($c, self::STOP)) {
             if (!$completedAbruptly) {
                 $min = $this->allowCoreThreadTimeOut ? 0 : $this->corePoolSize;
@@ -714,6 +744,8 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
         self::$workerTasks->create();
 
         self::$taskCounter = new \Swoole\Atomic\Long(0);  
+        $this->failedWorkerCount = new \Swoole\Atomic\Long(0);
+        \Concurrent\Lock\LockSupport::init();
     }
 
     /**
@@ -732,6 +764,10 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
      */
     public function execute(RunnableInterface | callable $command): void
     {
+        if ($this->isFailed()) {
+            throw new \RuntimeException('Cannot execute tasks: worker pool has failed');
+        }
+
         /*
          * Proceed in 3 steps:
          *
@@ -795,6 +831,12 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
         $this->tryTerminate();
     }
 
+    public function failPool(): void
+    {
+        $this->markWorkerFailure();
+        $this->tryTerminate();
+    }
+
     public function shutdownNow(): array
     {
         $tasks = [];
@@ -814,6 +856,16 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
     public function isShutdown(): bool
     {
         return self::runStateAtLeast($this->ctl->get(), self::SHUTDOWN);
+    }
+
+    public function isFailed(): bool
+    {
+        return $this->failedWorkerCount->get() > 0;
+    }
+
+    public function getFailedWorkerCount(): int
+    {
+        return $this->failedWorkerCount->get();
     }
 
     /** Used by ScheduledThreadPoolExecutor. */
@@ -1103,15 +1155,8 @@ class DefaultPoolExecutor implements ExecutorServiceInterface
      */
     public function getPoolSize(): int
     {
-        $this->mainLock->lock();
-        try {
-            // Remove rare and surprising possibility of
-            // isTerminated() && getPoolSize() > 0
-            return self::runStateAtLeast($this->ctl->get(), self::TIDYING) ? 0
-                : count($this->workers);
-        } finally {
-            $this->mainLock->unlock();
-        }
+        $c = $this->ctl->get();
+        return self::runStateAtLeast($c, self::TIDYING) ? 0 : self::workerCountOf($c);
     }
 
     /**
